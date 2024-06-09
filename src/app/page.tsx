@@ -7,7 +7,9 @@ export default function Home() {
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [isTranscribing, setIsTranscribing] = useState<boolean>(false);
   const [recordingTime, setRecordingTime] = useState<number>(0);
+  const [error, setError] = useState<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<BlobPart[]>([]);
   const recordingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -16,6 +18,7 @@ export default function Home() {
     setIsRecording(true);
     setRecordingTime(0); // タイムリセット
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    streamRef.current = stream;
     const mediaRecorder = new MediaRecorder(stream);
     audioChunksRef.current = [];
 
@@ -38,10 +41,12 @@ export default function Home() {
   };
 
   const stopRecording = () => {
-    if (!mediaRecorderRef.current) return;
+    if (!mediaRecorderRef.current || !streamRef.current) return;
 
     setIsRecording(false);
     mediaRecorderRef.current.stop();
+    streamRef.current.getTracks().forEach((track) => track.stop()); // Stop all tracks
+
     if (recordingTimeoutRef.current) {
       clearTimeout(recordingTimeoutRef.current);
     }
@@ -66,7 +71,15 @@ export default function Home() {
       });
 
       const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.error || "An unknown error occurred.");
+        setIsTranscribing(false);
+        return;
+      }
+
       setTranscript(data.transcript);
+      setError(null);
       setIsTranscribing(false);
     };
   };
@@ -79,6 +92,10 @@ export default function Home() {
       }
       if (recordingTimeoutRef.current) {
         clearTimeout(recordingTimeoutRef.current);
+      }
+      // コンポーネントがアンマウントされる際にストリームを停止
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
       }
     };
   }, []);
@@ -117,6 +134,7 @@ export default function Home() {
         </div>
       )}
       {isTranscribing && <p className="text-yellow-600">文字起こし中...</p>}
+      {error && <p className="text-red-600">{error}</p>}
       <h2 className="mt-4 text-xl font-semibold">文字起こし結果</h2>
       <p className="mt-2 p-4 border rounded">{transcript}</p>
     </div>
